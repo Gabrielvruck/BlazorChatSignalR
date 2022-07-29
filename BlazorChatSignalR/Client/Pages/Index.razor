@@ -1,0 +1,80 @@
+﻿@page "/"
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<PageTitle>SignalR Chat</PageTitle>
+<h3>SignalR Chat</h3>
+
+@if (!IsConnected)
+{
+    <div class="input-group">
+        <input @bind="usuarioNome" class="form-control" placeholder="Qual é seu nome ?">
+        <button class="btn btn-primary form-control-append" @onclick="ConnectAsync">Conectar</button>
+    </div>
+}
+else
+{
+    <textarea style="width:100%;height:500px;" @ref="TextAreaRef">
+        @mensagens
+        </textarea>
+    <div class="input-group">
+        <input @bind-value="mensagem" @bind-value:event="oninput" @onkeyup="ManipularEntradaAsync" class="form-control">
+        <button class="btn btn-primary form-group-append" @onclick="EnviarAsync" disabled="@(!IsConnected)">
+            Enviar
+        </button>
+    </div>
+}
+
+@code {
+    private HubConnection? hubConnection;
+    private string mensagens = string.Empty;
+    private string usuarioNome = string.Empty;
+    private string mensagem = string.Empty;
+    ElementReference TextAreaRef;
+
+
+    private async Task ConnectAsync()
+    {
+        hubConnection = new HubConnectionBuilder().WithUrl(NavigationManager.ToAbsoluteUri($"/chathub?usuarioNome={usuarioNome}")).Build();
+
+        hubConnection.On<string, string>("ReceberMensagem", (usuario, mensagem) =>
+        {
+            var msg = $"{(string.IsNullOrEmpty(usuario) ? "" : usuario + ":")} {mensagem}";
+            mensagens += msg + "\n";
+            JSRuntime.InvokeVoidAsync("scrollToBottom", TextAreaRef);
+            StateHasChanged();
+        });
+
+        await hubConnection.StartAsync();
+    }
+   
+    private async Task ManipularEntradaAsync(KeyboardEventArgs args)
+    {
+        if (args.Key.Equals("Enter"))
+        {
+            await EnviarAsync();
+        }
+    }
+
+     private async Task EnviarAsync()
+    {
+        if (hubConnection != null)
+        {
+            await hubConnection.SendAsync("AdicionarMensagemAoBatePapoAsync", usuarioNome, mensagem);
+            mensagem = string.Empty;
+        }
+    }
+
+
+    public bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection != null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+
+}
